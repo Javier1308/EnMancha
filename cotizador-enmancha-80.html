@@ -685,14 +685,20 @@ function construirReporte(){
     "</div>";
 }
 
+var pdfGenerando = false;
 document.getElementById("btn-pdf").addEventListener("click", function(){
   if (!haySeleccion()){
     alert("Elige al menos un servicio para generar tu cotización.");
     return;
   }
+  if (pdfGenerando) return;
+  pdfGenerando = true;
+  var btn = this;
+  btn.disabled = true;
   construirReporte();
   var el = document.getElementById("reporte");
   var nombre = "Cotizacion_ideal_EnMancha_80p.pdf";
+  function liberar(){ pdfGenerando = false; btn.disabled = false; }
   if (typeof html2pdf !== "undefined"){
     html2pdf().set({
       margin: [8, 8, 10, 8],
@@ -700,11 +706,14 @@ document.getElementById("btn-pdf").addEventListener("click", function(){
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, backgroundColor: "#FFFDF6" },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
-    }).from(el).save();
+    }).from(el).save().then(function(){ setTimeout(liberar, 1500); });
   } else {
     document.body.classList.add("imprimiendo");
     window.print();
-    setTimeout(function(){ document.body.classList.remove("imprimiendo"); }, 400);
+    setTimeout(function(){
+      document.body.classList.remove("imprimiendo");
+      liberar();
+    }, 400);
   }
 });
 
