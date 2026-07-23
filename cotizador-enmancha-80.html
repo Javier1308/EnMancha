@@ -147,7 +147,7 @@
   .pie b{color:var(--rojo)}
 
   /* ===== Reporte PDF (oculto en pantalla) ===== */
-  #reporte{position:fixed; left:-10000px; top:0; width:720px; background:#FFFDF6; color:var(--tinta); font-family:'Karla',sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  #reporte{position:absolute; left:0; top:0; width:720px; visibility:hidden; pointer-events:none; background:#FFFDF6; color:var(--tinta); font-family:'Karla',sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact}
   .r-in{padding:32px 40px 34px}
   .r-cab{text-align:center; margin-bottom:8px}
   .r-logo{width:54px; height:54px; border-radius:14px; display:inline-block}
@@ -524,6 +524,7 @@ function refrescar(){
   document.getElementById("num-mozos").textContent = estado.mozos;
   document.getElementById("num-pisos").textContent = estado.pisos;
   actualizarCuenta();
+  desbloquearPdf();
 }
 
 /* ================== EVENTOS ================== */
@@ -686,6 +687,11 @@ function construirReporte(){
 }
 
 var pdfGenerando = false;
+function desbloquearPdf(){
+  pdfGenerando = false;
+  var btn = document.getElementById("btn-pdf");
+  if (btn) btn.disabled = false;
+}
 document.getElementById("btn-pdf").addEventListener("click", function(){
   if (!haySeleccion()){
     alert("Elige al menos un servicio para generar tu cotización.");
@@ -698,22 +704,19 @@ document.getElementById("btn-pdf").addEventListener("click", function(){
   construirReporte();
   var el = document.getElementById("reporte");
   var nombre = "Cotizacion_ideal_EnMancha_80p.pdf";
-  function liberar(){ pdfGenerando = false; btn.disabled = false; }
   if (typeof html2pdf !== "undefined"){
+    el.style.visibility = "visible";
     html2pdf().set({
       margin: [8, 8, 10, 8],
       filename: nombre,
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, backgroundColor: "#FFFDF6" },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
-    }).from(el).save().then(function(){ setTimeout(liberar, 1500); });
+    }).from(el).save().then(function(){ el.style.visibility = "hidden"; });
   } else {
     document.body.classList.add("imprimiendo");
     window.print();
-    setTimeout(function(){
-      document.body.classList.remove("imprimiendo");
-      liberar();
-    }, 400);
+    setTimeout(function(){ document.body.classList.remove("imprimiendo"); }, 400);
   }
 });
 
