@@ -1,0 +1,3 @@
+{
+  "rewrites": [{ "source": "/", "destination": "/cotizador-enmancha-80.html" }]
+}
