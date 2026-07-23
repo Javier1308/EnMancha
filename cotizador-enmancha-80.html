@@ -146,8 +146,19 @@
   .pie{max-width:960px; margin:26px auto 0; padding:0 16px; font-size:12.5px; color:#6B5136}
   .pie b{color:var(--rojo)}
 
-  /* ===== Reporte PDF (oculto en pantalla) ===== */
-  #reporte{position:absolute; left:0; top:0; width:720px; visibility:hidden; pointer-events:none; background:#FFFDF6; color:var(--tinta); font-family:'Karla',sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  /* ===== Vista previa y reporte PDF ===== */
+  #modal{position:fixed; inset:0; z-index:100; background:rgba(38,16,13,.6); display:none; overflow:auto; padding:22px 12px 30px; -webkit-overflow-scrolling:touch}
+  #modal.abierto{display:block}
+  .modal-caja{max-width:768px; margin:0 auto; background:#FFFDF6; border-radius:16px; box-shadow:0 18px 60px rgba(0,0,0,.35); overflow:hidden}
+  #reporte{background:#FFFDF6; color:var(--tinta); font-family:'Karla',sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  #reporte table, #reporte tr, #reporte .r-pp, #reporte .r-veredicto{page-break-inside:avoid}
+  .modal-acciones{display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; padding:12px 16px; background:#F4E9D2; border-top:1px solid #E4D2AA}
+  .modal-acciones .btn{padding:11px 16px}
+  .btn.cerrar{background:transparent; color:var(--fuerte); border-color:#C9B896}
+  .btn.cerrar:hover{background:#EFE3C8}
+  .btn.descargar{background:var(--rojo); color:#fff; border-color:var(--rojo)}
+  .btn.descargar:hover{background:var(--rojo-osc); border-color:var(--rojo-osc)}
+  .btn[disabled]{opacity:.6; cursor:default}
   .r-in{padding:32px 40px 34px}
   .r-cab{text-align:center; margin-bottom:8px}
   .r-logo{width:54px; height:54px; border-radius:14px; display:inline-block}
@@ -175,8 +186,10 @@
   /* Fallback de impresión: solo el reporte */
   @media print{
     body.imprimiendo .app-ui{display:none !important}
-    body.imprimiendo #reporte{position:static; left:auto; width:auto}
     body.imprimiendo{padding-bottom:0; background:#fff}
+    body.imprimiendo #modal{display:block; position:static; background:none; padding:0; overflow:visible}
+    body.imprimiendo .modal-caja{box-shadow:none; border-radius:0; max-width:none}
+    body.imprimiendo .modal-acciones{display:none}
   }
   @media (max-width:620px){
     .cuenta-in{gap:10px}
@@ -278,7 +291,15 @@
   </footer>
 </div>
 
-<div id="reporte" aria-hidden="true"></div>
+<div id="modal" role="dialog" aria-modal="true" aria-label="Vista previa de tu cotización">
+  <div class="modal-caja">
+    <div id="reporte"></div>
+    <div class="modal-acciones">
+      <button class="btn cerrar" id="btn-cerrar" type="button">Cerrar</button>
+      <button class="btn descargar" id="btn-descargar" type="button">Descargar PDF</button>
+    </div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -524,7 +545,6 @@ function refrescar(){
   document.getElementById("num-mozos").textContent = estado.mozos;
   document.getElementById("num-pisos").textContent = estado.pisos;
   actualizarCuenta();
-  desbloquearPdf();
 }
 
 /* ================== EVENTOS ================== */
@@ -686,38 +706,72 @@ function construirReporte(){
     "</div>";
 }
 
-var pdfGenerando = false;
-function desbloquearPdf(){
-  pdfGenerando = false;
-  var btn = document.getElementById("btn-pdf");
-  if (btn) btn.disabled = false;
+/* ================== VISTA PREVIA + DESCARGA ================== */
+var modal = document.getElementById("modal");
+function abrirModal(){ modal.classList.add("abierto"); document.body.style.overflow = "hidden"; }
+function cerrarModal(){ modal.classList.remove("abierto"); document.body.style.overflow = ""; }
+document.getElementById("btn-cerrar").addEventListener("click", cerrarModal);
+modal.addEventListener("click", function(ev){ if (ev.target === modal) cerrarModal(); });
+document.addEventListener("keydown", function(ev){ if (ev.key === "Escape") cerrarModal(); });
+
+/* Espera a que las fuentes y la vista estén pintadas antes de capturar */
+function cuandoEsteListo(fn){
+  var seguir = function(){ requestAnimationFrame(function(){ requestAnimationFrame(fn); }); };
+  if (document.fonts && document.fonts.ready && document.fonts.ready.then){
+    document.fonts.ready.then(seguir, seguir);
+  } else { setTimeout(seguir, 150); }
 }
+
+function imprimirFallback(){
+  document.body.classList.add("imprimiendo");
+  window.print();
+  setTimeout(function(){ document.body.classList.remove("imprimiendo"); }, 400);
+}
+
+function descargarPDF(){
+  var el = document.getElementById("reporte");
+  var caja = el.parentNode;
+  var btn = document.getElementById("btn-descargar");
+  var txtOriginal = btn.textContent;
+  btn.disabled = true; btn.textContent = "Generando…";
+
+  /* Ancho fijo de 720 px durante la captura para un A4 consistente (también en celular) */
+  var prevEl = el.style.width, prevMax = caja.style.maxWidth, prevW = caja.style.width;
+  el.style.width = "720px"; caja.style.maxWidth = "none"; caja.style.width = "720px";
+  var restaurar = function(){
+    el.style.width = prevEl; caja.style.maxWidth = prevMax; caja.style.width = prevW;
+    btn.disabled = false; btn.textContent = txtOriginal;
+  };
+
+  cuandoEsteListo(function(){
+    if (typeof html2pdf === "undefined"){ restaurar(); imprimirFallback(); return; }
+    html2pdf().set({
+      margin: [8, 8, 10, 8],
+      filename: "Cotizacion_ideal_EnMancha_80p.pdf",
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: {
+        scale: 2, useCORS: true, backgroundColor: "#FFFDF6",
+        scrollX: 0, scrollY: 0,
+        onclone: function(doc){
+          var r = doc.getElementById("reporte");
+          if (r){ r.style.position = "static"; r.style.left = "0"; r.style.width = "720px"; }
+        }
+      },
+      pagebreak: { mode: ["css", "legacy"], avoid: ["tr", ".r-pp", ".r-veredicto"] },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
+    }).from(el).save().then(restaurar).catch(function(){ restaurar(); imprimirFallback(); });
+  });
+}
+document.getElementById("btn-descargar").addEventListener("click", descargarPDF);
+
 document.getElementById("btn-pdf").addEventListener("click", function(){
   if (!haySeleccion()){
     alert("Elige al menos un servicio para generar tu cotización.");
     return;
   }
-  if (pdfGenerando) return;
-  pdfGenerando = true;
-  var btn = this;
-  btn.disabled = true;
   construirReporte();
-  var el = document.getElementById("reporte");
-  var nombre = "Cotizacion_ideal_EnMancha_80p.pdf";
-  if (typeof html2pdf !== "undefined"){
-    el.style.visibility = "visible";
-    html2pdf().set({
-      margin: [8, 8, 10, 8],
-      filename: nombre,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#FFFDF6" },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
-    }).from(el).save().then(function(){ el.style.visibility = "hidden"; });
-  } else {
-    document.body.classList.add("imprimiendo");
-    window.print();
-    setTimeout(function(){ document.body.classList.remove("imprimiendo"); }, 400);
-  }
+  abrirModal();
+  cuandoEsteListo(descargarPDF); /* descarga automática con la vista ya visible */
 });
 
 /* ================== INICIO ================== */
